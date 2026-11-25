@@ -29,6 +29,7 @@ import logic
 import mailer
 import texts
 import web_api
+import yookassa
 from sheets import Sheets
 
 log = logging.getLogger("bot")
@@ -63,11 +64,13 @@ class Book(StatesGroup):
     out_count = State()
     out_age = State()
     cert_code = State()
+    receipt = State()
 
 
 class Cert(StatesGroup):
     qty = State()
     contact = State()
+    receipt = State()
 
 
 class Review(StatesGroup):
@@ -215,9 +218,9 @@ def rec_fmt_label(rec: dict) -> str:
     return texts.FMT_LABEL.get(SHEET_FMT.get(str(rec.get("Формат", "")).strip(), ""), rec.get("Формат", ""))
 
 
-def pay_choice_kb(bid: str):
+def pay_choice_kb(bid: str, url: str = ""):
     return kb([
-        [url_btn(texts.BTN_PREPAY, texts.PAY_URL)],
+        [url_btn(texts.BTN_PREPAY, url or texts.PAY_URL)],
         [btn(texts.BTN_PREPAID, f"bpaid:{bid}")],
         [btn(texts.BTN_HAVE_CERT, f"bcert:{bid}")],
     ])
@@ -748,6 +751,10 @@ async def finish(bot: Bot, user, chat_id: int, state: FSMContext):
         await state.clear()
         await bot.send_message(chat_id, texts.RESTART, reply_markup=menu_kb())
         return
+    if fmt != "out" and not data.get("receipt") and need_receipt_contact(data["contact"]):
+        await state.set_state(Book.receipt)  # для чека ЮKassa нужен телефон или почта
+        await bot.send_message(chat_id, texts.ASK_RECEIPT)
+        return
     now = now_local()
     tg = tg_of(user)
     base = {
@@ -778,7 +785,7 @@ async def finish(bot: Bot, user, chat_id: int, state: FSMContext):
     day, start = date.fromisoformat(data["day"]), logic.parse_time(data["time"])
     people = int(data["count"])
     rec = {**base, "Формат": FMT_SHEET[fmt], "Дата": f"{day:%d.%m.%Y}", "Время": f"{start:%H:%M}",
-           "Человек": people, "Статус": logic.STATUS_WAIT,
+           "Человек": people, "Статус": logic.STATUS_WAIT, "Для чека": data.get("receipt", ""),
            "Размер": data.get("size", "") if fmt == "group" and people == 1 else ""}
     async with LOCK:
         studio = await load_studio(fresh=True, fmt=fmt)
@@ -796,11 +803,166 @@ async def finish(bot: Bot, user, chat_id: int, state: FSMContext):
         name=data["name"], contact=data["contact"], tg=tg))
 
 
+@router.message(Book.receipt, F.text)
+async def msg_receipt(message: Message, state: FSMContext, bot: Bot):
+    text = message.text.strip()[:100]
+    if not yookassa.customer(text, text):
+        await message.answer(texts.BAD_RECEIPT)
+        return
+    await state.update_data(receipt=text)
+    await finish(bot, message.from_user, message.chat.id, state)
+
+
 async def send_pay_offer(bot: Bot, chat_id: int, rec: dict):
     people = logic.to_int(rec.get("Человек"), 1)
     await bot.send_message(chat_id, texts.CONFIRM.format(
         fmt=rec_fmt_label(rec), when=rec_when(rec), people=people, prepay=rub(prepay(people))),
-        reply_markup=pay_choice_kb(rec["ID"]))
+        reply_markup=await pay_kb(rec))
+
+
+# ---------------------------------------------------------------- ЮKassa: платёж на каждую запись и сертификат
+PAY_LOCK = asyncio.Lock()  # чтобы одну оплату не подтвердили дважды (фоновая проверка + кнопка + сайт)
+
+
+def default_return_url() -> str:
+    return f"https://t.me/{BOT_USERNAME}" if BOT_USERNAME else "https://koverking39.ru"
+
+
+def need_receipt_contact(*contacts: str) -> bool:
+    """Чеки включены, а телефона или почты для чека нет — надо спросить."""
+    return yookassa.enabled() and yookassa.RECEIPTS and not any(yookassa.customer(c, c) for c in contacts if c)
+
+
+async def _payment_url(rec: dict, sheet: str, amount: int, description: str, item: str, mode: str,
+                       subject: str, metadata: dict, return_url: str = "") -> str:
+    """Ссылка на оплату именно этой записи/покупки. Пусто — ЮKassa не подключена или не ответила
+    (тогда используется общая ссылка, а оплату подтверждает менеджер)."""
+    if not yookassa.enabled() or amount <= 0:
+        return ""
+    if rec.get("Платёж") and rec.get("Ссылка оплаты"):
+        return rec["Ссылка оплаты"]
+    buyer = {}
+    for c in (rec.get("Для чека", ""), rec.get("Email", ""), rec.get("Контакт", "")):
+        buyer = buyer or yookassa.customer(c, c)
+    try:
+        p = await yookassa.create(amount, description, return_url or default_return_url(), metadata, item, mode, subject,
+                                  buyer)
+    except Exception:
+        log.exception("ЮKassa: не получилось создать платёж")
+        return ""
+    row = rec.get("_row")
+    if not row:
+        found = await (find_booking(rec.get("ID", "")) if sheet == "Записи" else find_cert(cert_codes(rec)[0]))
+        row = found and found["_row"]
+    if row:
+        await asyncio.to_thread(sheets.set_cell, row, "Платёж", p["id"], sheet)
+        await asyncio.to_thread(sheets.set_cell, row, "Ссылка оплаты", p["url"], sheet)
+    rec.update({"Платёж": p["id"], "Ссылка оплаты": p["url"]})
+    return p["url"]
+
+
+async def booking_pay_url(rec: dict, return_url: str = "") -> str:
+    people = logic.to_int(rec.get("Человек"), 1)
+    return await _payment_url(
+        rec, "Записи", prepay(people), f"Предоплата: {rec_fmt_label(rec)}, {rec_when(rec)}, {people} чел.",
+        texts.RECEIPT_PREPAY, "partial_prepayment", "service", {"kind": "booking", "id": rec.get("ID", "")}, return_url)
+
+
+async def cert_pay_url(rec: dict, return_url: str = "") -> str:
+    qty = logic.to_int(rec.get("Ковриков"), 1)
+    return await _payment_url(
+        rec, "Сертификаты", logic.to_int(rec.get("Сумма")), f"Подарочный сертификат {cert_what(cert_size(rec), qty)}",
+        texts.RECEIPT_CERT, "advance", "payment", {"kind": "cert", "order": cert_codes(rec)[0]}, return_url)
+
+
+async def pay_kb(rec: dict):
+    return pay_choice_kb(rec["ID"], await booking_pay_url(rec))
+
+
+async def _payment_state(rec: dict, sheet: str) -> str:
+    """Спрашиваем ЮKassa. Отменённый/просроченный платёж забываем — в следующий раз создастся новый."""
+    pid = str(rec.get("Платёж", "")).strip()
+    if not pid or not yookassa.enabled():
+        return ""
+    try:
+        state = await yookassa.status(pid)
+    except Exception:
+        log.warning("ЮKassa: не получилось проверить платёж %s", pid)
+        return ""
+    if state == yookassa.CANCELED:
+        await asyncio.to_thread(sheets.set_cell, rec["_row"], "Платёж", "", sheet)
+        await asyncio.to_thread(sheets.set_cell, rec["_row"], "Ссылка оплаты", "", sheet)
+    return state
+
+
+async def check_booking_payment(bot: Bot, bid: str) -> bool:
+    """True — запись оплачена (сейчас или раньше)."""
+    async with PAY_LOCK:
+        rec = await find_booking(bid)
+        if not rec:
+            return False
+        status = logic.norm(rec.get("Статус"))
+        if status == logic.norm(logic.STATUS_PAID):
+            return True
+        if status in logic.INACTIVE and status != logic.norm(logic.STATUS_EXPIRED):
+            return False
+        if await _payment_state(rec, "Записи") != yookassa.PAID:
+            return False
+        await asyncio.to_thread(sheets.set_cell, rec["_row"], "Статус", logic.STATUS_PAID)
+    people = logic.to_int(rec.get("Человек"), 1)
+    head = texts.MGR_FROM_SITE if rec.get("Источник") == texts.SOURCE_SITE else ""
+    note = head + texts.MGR_AUTO_PAID.format(
+        fmt=rec_fmt_label(rec), when=rec_when(rec), people=people, prepay=rub(prepay(people)),
+        name=rec.get("Имя", ""), contact=rec.get("Контакт", ""), tg=rec.get("Telegram", "—") or "—")
+    if status == logic.norm(logic.STATUS_EXPIRED):
+        note += "\n\n⚠️ Бронь успела сгореть до оплаты — проверь, что место ещё свободно."
+    if not await send_confirmed(bot, rec):
+        note += texts.MGR_SITE_NO_TG.format(contact=rec.get("Контакт", ""))
+    await tell_manager(bot, note)
+    return True
+
+
+async def check_cert_payment(bot: Bot, order: str) -> bool:
+    async with PAY_LOCK:
+        rec = await find_cert(order)
+        if not rec:
+            return False
+        if logic.norm(rec.get("Статус")) == logic.norm(logic.STATUS_PAID):
+            return True
+        if await _payment_state(rec, "Сертификаты") != yookassa.PAID:
+            return False
+        await asyncio.to_thread(sheets.set_cell, rec["_row"], "Статус", logic.STATUS_PAID, "Сертификаты")
+    qty = logic.to_int(rec.get("Ковриков"), 1)
+    await tell_manager(bot, texts.MGR_AUTO_CERT.format(codes=", ".join(cert_codes(rec)), what=cert_what(cert_size(rec), qty),
+                                                      total=rub(logic.to_int(rec.get("Сумма")))))
+    await deliver_cert(bot, rec)
+    return True
+
+
+async def check_payments(bot: Bot):
+    """Фоновая проверка: все неоплаченные записи и сертификаты, у которых есть платёж в ЮKassa."""
+    if not yookassa.enabled():
+        return
+    now = now_local()
+    for r in await asyncio.to_thread(sheets.bookings, True):
+        created = logic.parse_created(r.get("Создано"))
+        if r.get("Платёж") and logic.norm(r.get("Статус")) != logic.norm(logic.STATUS_PAID) \
+                and created and now - created < timedelta(days=3):
+            await check_booking_payment(bot, str(r.get("ID", "")))
+    for r in await asyncio.to_thread(sheets.certs, True):
+        created = logic.parse_created(r.get("Создано"))
+        if r.get("Платёж") and logic.norm(r.get("Статус")) != logic.norm(logic.STATUS_PAID) \
+                and created and now - created < timedelta(days=3) and cert_codes(r):
+            await check_cert_payment(bot, cert_codes(r)[0])
+
+
+async def payments_loop(bot: Bot):
+    while True:
+        try:
+            await check_payments(bot)
+        except Exception:
+            log.exception("Ошибка проверки оплат ЮKassa")
+        await asyncio.sleep(60)
 
 
 # ---------------------------------------------------------------- prepayment and certificate at booking
@@ -863,6 +1025,9 @@ async def cb_prepaid(cb: CallbackQuery):
         await cb.message.answer(texts.BOOKING_GONE, reply_markup=kb([[btn(texts.BTN_BOOK, "book")], MENU_ROW]))
     elif logic.norm(rec.get("Статус")) == logic.norm(logic.STATUS_PAID):
         await cb.message.answer(texts.BOOKING_ALREADY)
+    elif rec.get("Платёж") and yookassa.enabled():  # оплата через ЮKassa — проверяем сами, без менеджера
+        if not await check_booking_payment(cb.bot, rec["ID"]):
+            await cb.message.answer(texts.PAY_NOT_YET)
     else:
         await request_prepay_check(cb.bot, rec)
         await cb.message.answer(texts.PREPAY_WAIT)
@@ -908,7 +1073,7 @@ async def cb_manager_prepay(cb: CallbackQuery, bot: Bot):
             await cb.message.answer(texts.MGR_PREPAY_OK_SITE + texts.MGR_SITE_NO_TG.format(contact=rec.get("Контакт", "")))
     else:
         await asyncio.to_thread(sheets.set_cell, rec["_row"], "Статус", logic.STATUS_WAIT)
-        await tell_client(bot, rec.get("Telegram ID", ""), texts.PREPAY_NOT_PAID, pay_choice_kb(rec["ID"]))
+        await tell_client(bot, rec.get("Telegram ID", ""), texts.PREPAY_NOT_PAID, await pay_kb(rec))
         await cb.message.answer(texts.MGR_PREPAY_NO)
     await cb.answer()
 
@@ -936,7 +1101,7 @@ async def link_site_booking(bot: Bot, message: Message, bid: str):
         people = logic.to_int(rec.get("Человек"), 1)
         await message.answer(texts.SITE_LINKED)
         await message.answer(texts.SITE_LINKED_WAIT.format(when=when, prepay=rub(prepay(people))),
-                             reply_markup=pay_choice_kb(rec["ID"]))
+                             reply_markup=await pay_kb(rec))
     await tell_manager(bot, texts.MGR_SITE_LINKED.format(name=rec.get("Имя", ""), when=when, tg=tg_of(user)))
 
 
@@ -979,7 +1144,8 @@ def new_cert_codes(n: int) -> list[str]:
 
 
 async def add_cert_order(size: int, qty: int, separate: bool, kind: str, name: str, contact: str,
-                         tg: str, tg_id: str, source: str, email: str = "", comment: str = "") -> dict:
+                         tg: str, tg_id: str, source: str, email: str = "", comment: str = "",
+                         receipt: str = "") -> dict:
     """Записывает покупку в лист «Сертификаты». Номер заказа = первый номер сертификата."""
     files = qty if separate else 1
     codes = await asyncio.to_thread(new_cert_codes, files)
@@ -990,7 +1156,7 @@ async def add_cert_order(size: int, qty: int, separate: bool, kind: str, name: s
         "Сумма": certificate.price(size, qty), "Статус": CERT_WAIT,
         "Действует до": f"{certificate.valid_until(now.date()):%d.%m.%Y}",
         "Имя": name, "Контакт": contact, "Telegram": tg, "Telegram ID": tg_id, "Источник": source, "Email": email,
-        "Комментарий": comment,
+        "Комментарий": comment, "Для чека": receipt,
     }
     await asyncio.to_thread(sheets.add_cert, rec)
     return {**rec, "order": codes[0]}
@@ -1199,17 +1365,34 @@ async def msg_cert_contact(message: Message, state: FSMContext, bot: Bot):
 
 async def create_cert_order(bot: Bot, user, chat_id: int, state: FSMContext, contact: str):
     d = await state.get_data()
+    if {"c_size", "c_qty", "c_kind"} <= d.keys() and not d.get("c_receipt") and need_receipt_contact(contact):
+        await state.update_data(c_contact=contact)  # для чека ЮKassa нужен телефон или почта
+        await state.set_state(Cert.receipt)
+        await bot.send_message(chat_id, texts.ASK_RECEIPT)
+        return
     await state.clear()
     if not {"c_size", "c_qty", "c_kind"} <= d.keys():
         await bot.send_message(chat_id, texts.RESTART, reply_markup=menu_kb())
         return
     size, qty, kind = d["c_size"], d["c_qty"], d["c_kind"]
     rec = await add_cert_order(size, qty, bool(d.get("c_sep")), kind, user.full_name or "", contact,
-                               tg_of(user), str(user.id), CERT_SOURCE_TG)
-    rows = [[url_btn(texts.BTN_PAY, texts.PAY_URL)], [btn(texts.BTN_PAID, f"cpaid:{rec['order']}")], MENU_ROW]
+                               tg_of(user), str(user.id), CERT_SOURCE_TG, receipt=d.get("c_receipt", ""))
+    url = await cert_pay_url(rec)
+    rows = [[url_btn(texts.BTN_PAY, url or texts.PAY_URL)], [btn(texts.BTN_PAID, f"cpaid:{rec['order']}")], MENU_ROW]
     await bot.send_message(chat_id, texts.CERT_PAY.format(
         what=cert_what(size, qty), type=texts.CERT_TYPE_LABEL[kind], total=rub(certificate.price(size, qty))),
         reply_markup=kb(rows))
+
+
+@router.message(Cert.receipt, F.text)
+async def msg_cert_receipt(message: Message, state: FSMContext, bot: Bot):
+    text = message.text.strip()[:100]
+    if not yookassa.customer(text, text):
+        await message.answer(texts.BAD_RECEIPT)
+        return
+    await state.update_data(c_receipt=text)
+    contact = (await state.get_data()).get("c_contact", "")
+    await create_cert_order(bot, message.from_user, message.chat.id, state, contact)
 
 
 @router.callback_query(F.data.startswith("cpaid:"))
@@ -1219,6 +1402,9 @@ async def cb_cert_paid(cb: CallbackQuery, bot: Bot):
         await restart(cb.message)
     elif logic.norm(rec.get("Статус")) == logic.norm(logic.STATUS_PAID):
         await cb.message.answer(texts.CERT_ALREADY)
+    elif rec.get("Платёж") and yookassa.enabled():
+        if not await check_cert_payment(bot, cert_codes(rec)[0]):
+            await cb.message.answer(texts.PAY_NOT_YET)
     else:
         await request_cert_check(bot, rec)
         await cb.message.answer(texts.CERT_WAIT_CHECK)
@@ -1240,7 +1426,8 @@ async def cb_manager_cert(cb: CallbackQuery, bot: Bot):
         await deliver_cert(bot, rec)
     else:
         await asyncio.to_thread(sheets.set_cell, rec["_row"], "Статус", CERT_WAIT, "Сертификаты")
-        rows = [[url_btn(texts.BTN_PAY, texts.PAY_URL)], [btn(texts.BTN_PAID, f"cpaid:{cert_codes(rec)[0]}")]]
+        rows = [[url_btn(texts.BTN_PAY, await cert_pay_url(rec) or texts.PAY_URL)],
+                [btn(texts.BTN_PAID, f"cpaid:{cert_codes(rec)[0]}")]]
         await tell_client(bot, rec.get("Telegram ID", ""), texts.CERT_NOT_PAID, kb(rows))
         await cb.message.answer(texts.MGR_CERT_NO)
     await cb.answer()
@@ -1258,7 +1445,8 @@ async def cb_rebook(cb: CallbackQuery, bot: Bot):
     b = logic.parse_booking(old)
     rec = {k: v for k, v in old.items() if not k.startswith("_")}
     rec.update({"Создано": now_local().strftime("%d.%m.%Y %H:%M"), "Статус": logic.STATUS_WAIT, "Напомнили": "",
-                "Бронь напомнили": "", "Отзыв запрошен": "", "Сертификат": ""})
+                "Бронь напомнили": "", "Отзыв запрошен": "", "Сертификат": "",
+                "Платёж": "", "Ссылка оплаты": ""})
     ok = False
     if b.day and b.start:
         async with LOCK:
@@ -1335,7 +1523,8 @@ async def hold_reminders(bot: Bot):
         if b.hold_reminded or not b.bid or not logic.hold_reminder_due(b, now):
             continue
         when = texts.when(b.day, b.start) if b.day and b.start else "—"
-        sent = await tell_client(bot, b.tg_id, texts.HOLD_REMINDER.format(when=when), pay_choice_kb(b.bid))
+        sent = await tell_client(bot, b.tg_id, texts.HOLD_REMINDER.format(when=when),
+                                 await pay_kb(next(r for r in rows if r["_row"] == b.row)))
         await asyncio.to_thread(sheets.set_cell, b.row, "Бронь напомнили", "да" if sent else "нет Telegram")
 
 
@@ -1437,6 +1626,7 @@ async def main():
     except Exception:
         log.exception("Вход для сайта не запустился — бот в Telegram работает дальше")
     job = asyncio.create_task(background(bot))  # noqa: F841 (держим ссылку)
+    pay_job = asyncio.create_task(payments_loop(bot))  # noqa: F841
     await dp.start_polling(bot)
 
 

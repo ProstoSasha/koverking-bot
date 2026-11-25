@@ -69,9 +69,16 @@ def _phone_ok(phone: str) -> bool:
     return 10 <= len(re.sub(r"\D", "", phone)) <= 15
 
 
+def _return_url(d: dict) -> str:
+    """Куда ЮKassa вернёт клиента после оплаты — на ту же страницу сайта."""
+    url = str(d.get("return_url", "")).strip()
+    return url if url.startswith("https://") and len(url) < 500 else "https://koverking39.ru"
+
+
 def build_app(bot, ctx) -> web.Application:
     """ctx — модуль bot.py: берём оттуда таблицу, расписание, тексты и отправку менеджеру."""
     logic, texts, certificate, mailer = ctx.logic, ctx.texts, ctx.certificate, ctx.mailer
+    yookassa = ctx.yookassa
     routes = web.RouteTableDef()
 
     async def body(request: web.Request) -> dict:
@@ -186,7 +193,7 @@ def build_app(bot, ctx) -> web.Application:
             "Дата": f"{day:%d.%m.%Y}", "Время": f"{start:%H:%M}", "Человек": people,
             "Имя": name, "Контакт": phone, "Telegram": "—", "Telegram ID": "",
             "Статус": logic.STATUS_WAIT, "Размер": size, "Источник": texts.SOURCE_SITE,
-            "Детали": details,
+            "Детали": details, "Для чека": phone,
         }
         async with ctx.LOCK:
             studio = await ctx.load_studio(fresh=True, fmt=fmt)
@@ -200,7 +207,9 @@ def build_app(bot, ctx) -> web.Application:
         await ctx.tell_manager(bot, texts.MGR_FROM_SITE + texts.MGR_NEW.format(
             fmt=fmt_label, when=when, people=people, size_line=ctx.size_line(rec),
             name=name, contact=phone + (f"\nКомментарий: {comment}" if comment else ""), tg="—"))
+        pay_url = await ctx.booking_pay_url(rec, _return_url(d))
         return _ok(id=bid, when=when, people=people, prepay=logic.PREPAY_PER_PERSON * people,
+                   pay_url=pay_url or texts.PAY_URL, auto=bool(pay_url),
                    tg_link=f"https://t.me/{ctx.BOT_USERNAME}?start=b_{bid}" if ctx.BOT_USERNAME else "")
 
     @routes.post("/api/outcall")
@@ -244,9 +253,14 @@ def build_app(bot, ctx) -> web.Application:
         r, error = await active_booking(d.get("id"))
         if error:
             return error
-        if logic.norm(r.get("Статус")) != logic.norm(logic.STATUS_PAID):
-            await ctx.request_prepay_check(bot, r)
-        return _ok()
+        if logic.norm(r.get("Статус")) == logic.norm(logic.STATUS_PAID):
+            return _ok(status="paid", **deadline_info(r))
+        if r.get("Платёж") and yookassa.enabled():  # ЮKassa: проверяем сами, менеджер не нужен
+            if await ctx.check_booking_payment(bot, r["ID"]):
+                return _ok(status="paid", **deadline_info(r))
+            return _ok(status="pending")
+        await ctx.request_prepay_check(bot, r)
+        return _ok(status="checking")
 
     @routes.post("/api/cert")
     async def cert(request: web.Request):
@@ -276,6 +290,9 @@ def build_app(bot, ctx) -> web.Application:
         r = await ctx.find_booking(request.query.get("id", "").strip())
         if not r:
             return _err("not_found", 404)
+        if r.get("Платёж") and yookassa.enabled() and logic.norm(r.get("Статус")) != logic.norm(logic.STATUS_PAID):
+            await ctx.check_booking_payment(bot, r["ID"])
+            r = await ctx.find_booking(r["ID"]) or r
         st = logic.norm(r.get("Статус"))
         if st == logic.norm(logic.STATUS_PAID):
             return _ok(status="paid", **deadline_info(r))
@@ -311,10 +328,12 @@ def build_app(bot, ctx) -> web.Application:
         if kind == "pdf" and mailer.enabled() and not email:
             return _err("bad_email")
         rec = await ctx.add_cert_order(size, qty, bool(d.get("separate")) and qty > 1, kind, name, phone,
-                                       "—", "", texts.SOURCE_SITE, email, comment)
+                                       "—", "", texts.SOURCE_SITE, email, comment, receipt=email or phone)
         order = rec["order"]
+        pay_url = await ctx.cert_pay_url(rec, _return_url(d))
         return _ok(order=order, key=ctx.link_key(order), total=certificate.price(size, qty),
-                   what=ctx.cert_what(size, qty), type=texts.CERT_TYPE_LABEL[kind], pay_url=texts.PAY_URL,
+                   what=ctx.cert_what(size, qty), type=texts.CERT_TYPE_LABEL[kind],
+                   pay_url=pay_url or texts.PAY_URL, auto=bool(pay_url),
                    tg_link=f"https://t.me/{ctx.BOT_USERNAME}?start=c_{order}" if ctx.BOT_USERNAME else "")
 
     async def cert_by_key(order: str, key: str):
@@ -334,9 +353,12 @@ def build_app(bot, ctx) -> web.Application:
         r, error = await cert_by_key(d.get("order"), d.get("key"))
         if error:
             return error
-        if logic.norm(r.get("Статус")) != logic.norm(logic.STATUS_PAID):
-            await ctx.request_cert_check(bot, r)
-        return _ok()
+        if logic.norm(r.get("Статус")) == logic.norm(logic.STATUS_PAID):
+            return _ok(status="paid")
+        if r.get("Платёж") and yookassa.enabled():
+            return _ok(status="paid" if await ctx.check_cert_payment(bot, ctx.cert_codes(r)[0]) else "pending")
+        await ctx.request_cert_check(bot, r)
+        return _ok(status="checking")
 
     @routes.get("/api/cert-status")
     async def cert_status(request: web.Request):
@@ -344,6 +366,9 @@ def build_app(bot, ctx) -> web.Application:
         r, error = await cert_by_key(order, key)
         if error:
             return error
+        if r.get("Платёж") and yookassa.enabled() and logic.norm(r.get("Статус")) != logic.norm(logic.STATUS_PAID):
+            await ctx.check_cert_payment(bot, ctx.cert_codes(r)[0])
+            r = await ctx.find_cert(order) or r
         st = logic.norm(r.get("Статус"))
         if st == logic.norm(logic.STATUS_PAID):
             kind = ctx.cert_kind(r)
