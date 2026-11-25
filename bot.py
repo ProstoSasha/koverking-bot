@@ -865,14 +865,14 @@ async def booking_pay_url(rec: dict, return_url: str = "") -> str:
     people = logic.to_int(rec.get("Человек"), 1)
     return await _payment_url(
         rec, "Записи", prepay(people), f"Предоплата: {rec_fmt_label(rec)}, {rec_when(rec)}, {people} чел.",
-        texts.RECEIPT_PREPAY, "partial_prepayment", "service", {"kind": "booking", "id": rec.get("ID", "")}, return_url)
+        texts.RECEIPT_PREPAY, "full_prepayment", "service", {"kind": "booking", "id": rec.get("ID", "")}, return_url)
 
 
 async def cert_pay_url(rec: dict, return_url: str = "") -> str:
     qty = logic.to_int(rec.get("Ковриков"), 1)
     return await _payment_url(
         rec, "Сертификаты", logic.to_int(rec.get("Сумма")), f"Подарочный сертификат {cert_what(cert_size(rec), qty)}",
-        texts.RECEIPT_CERT, "advance", "payment", {"kind": "cert", "order": cert_codes(rec)[0]}, return_url)
+        texts.RECEIPT_CERT, "full_prepayment", "service", {"kind": "cert", "order": cert_codes(rec)[0]}, return_url)
 
 
 async def pay_kb(rec: dict):
