@@ -1,0 +1,6 @@
+aiogram>=3.13
+gspread>=6.0
+python-dotenv>=1.0
+tzdata
+reportlab>=4.0
+pypdf>=4.0

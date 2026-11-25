@@ -1,0 +1,742 @@
+<!--
+  Виджет записи на мастер-классы и покупки подарочных сертификатов для Тильды.
+  Вставьте этот код целиком в блок «HTML-код» (T123) — один раз, в любом месте страницы.
+  Чтобы виджет работал на всех страницах сразу: Настройки сайта → Ещё → «HTML-код для вставки внутрь HEAD».
+
+  Запись открывается по кнопкам со ссылкой #booking или #popup:order,
+  покупка сертификата — по кнопкам со ссылкой #gift или #popup:sert.
+  Готовые ссылки для отдельных страниц (день рождения, свадьба и т.д.) — в настройках ниже.
+
+  Перед вставкой поменяйте одну строку ниже: API — адрес бота на bothost.
+-->
+<div id="kv-widget-root"></div>
+<style>
+  .kv-ov{position:fixed;inset:0;background:rgba(20,16,14,.55);z-index:999999;display:none;align-items:center;justify-content:center;padding:16px;font-family:inherit}
+  .kv-ov.kv-open{display:flex}
+  .kv-box{background:#fff;color:#1d1d1d;width:100%;max-width:460px;max-height:calc(100vh - 32px);border-radius:20px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25);font-size:15px;line-height:1.45}
+  .kv-head{display:flex;align-items:center;gap:8px;padding:16px 16px 8px}
+  .kv-head h3{flex:1;margin:0;font-size:18px;font-weight:700;line-height:1.25}
+  .kv-ic{width:36px;height:36px;border:0;border-radius:50%;background:#f3f1ef;color:#1d1d1d;font-size:18px;cursor:pointer;flex:none;display:flex;align-items:center;justify-content:center}
+  .kv-ic:hover{background:#e9e5e2}
+  .kv-body{padding:8px 16px 18px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .kv-p{margin:0 0 12px}
+  .kv-muted{color:#6d6763;font-size:13px}
+  .kv-note{background:#fff3ef;border-radius:12px;padding:10px 12px;margin:0 0 12px;font-size:14px}
+  .kv-cards{display:grid;gap:10px}
+  .kv-card{text-align:left;border:1.5px solid #ece7e3;background:#fff;border-radius:14px;padding:12px 14px;cursor:pointer;font:inherit;color:inherit;width:100%}
+  .kv-card:hover{border-color:#ff5c38}
+  .kv-card b{display:block;font-size:16px;margin-bottom:2px}
+  .kv-card span{color:#6d6763;font-size:13px}
+  .kv-link{background:none;border:0;padding:0;color:#ff5c38;font:inherit;font-size:13px;cursor:pointer;text-decoration:underline}
+  .kv-day{margin:14px 0 6px;font-weight:700}
+  .kv-day:first-child{margin-top:4px}
+  .kv-grid{display:flex;flex-wrap:wrap;gap:8px}
+  .kv-chip{border:1.5px solid #ece7e3;background:#fff;border-radius:12px;padding:9px 12px;cursor:pointer;font:inherit;color:inherit;font-size:14px}
+  .kv-chip:hover,.kv-chip.kv-on{border-color:#ff5c38;background:#fff3ef}
+  .kv-chip small{color:#6d6763}
+  .kv-num{min-width:48px;text-align:center;font-weight:700}
+  .kv-btn{display:block;width:100%;border:0;border-radius:14px;background:#ff5c38;color:#fff;font:inherit;font-weight:700;font-size:16px;padding:14px;cursor:pointer;text-align:center;text-decoration:none;margin-top:10px;box-sizing:border-box}
+  .kv-btn:hover{filter:brightness(.95)}
+  .kv-btn[disabled]{opacity:.5;cursor:default}
+  .kv-btn2{background:#f3f1ef;color:#1d1d1d}
+  .kv-btn3{background:#fff;color:#1d1d1d;border:1.5px solid #ece7e3}
+  .kv-tg{background:#2aabee}
+  .kv-f{display:block;margin:0 0 12px}
+  .kv-f span{display:block;font-size:13px;color:#6d6763;margin-bottom:4px}
+  .kv-f input,.kv-f textarea{width:100%;box-sizing:border-box;border:1.5px solid #ece7e3;border-radius:12px;padding:11px 12px;font:inherit;color:inherit;background:#fff}
+  .kv-f input:focus,.kv-f textarea:focus{outline:0;border-color:#ff5c38}
+  .kv-hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+  .kv-err{color:#c0392b;font-size:14px;margin:0 0 10px}
+  .kv-sum{border:1.5px solid #ece7e3;border-radius:14px;padding:12px 14px;margin:0 0 12px}
+  .kv-sum div{display:flex;justify-content:space-between;gap:10px;padding:2px 0}
+  .kv-sum div span:first-child{color:#6d6763}
+  .kv-sum div span:last-child{text-align:right;font-weight:600}
+  .kv-cal-h{display:flex;align-items:center;justify-content:space-between;margin:4px 0 8px;font-weight:700}
+  .kv-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+  .kv-cal .kv-wd{font-size:12px;color:#6d6763;padding:4px 0}
+  .kv-cal button{aspect-ratio:1;border:0;border-radius:10px;background:#fff3ef;font:inherit;font-weight:600;cursor:pointer;color:#1d1d1d;min-width:0;padding:0}
+  .kv-cal button:hover{background:#ff5c38;color:#fff}
+  .kv-cal .kv-off{aspect-ratio:1;display:flex;align-items:center;justify-content:center;color:#c9c3be;font-size:14px}
+  .kv-spin{width:28px;height:28px;border:3px solid #f3d6cd;border-top-color:#ff5c38;border-radius:50%;animation:kvr .8s linear infinite;margin:24px auto}
+  @keyframes kvr{to{transform:rotate(360deg)}}
+  .kv-img{width:100%;border-radius:12px;display:block;margin:0 0 10px}
+  .kv-ok{font-size:40px;text-align:center;margin:6px 0}
+  .kv-inline{display:inline-block;width:auto;padding:14px 28px}
+  @media (max-width:520px){
+    .kv-ov{padding:0;align-items:flex-end}
+    .kv-box{max-width:none;max-height:92vh;border-radius:20px 20px 0 0}
+  }
+</style>
+<script>
+(function () {
+  "use strict";
+
+  // ====================== НАСТРОЙКИ ======================
+  var API = "https://bot-XXXX.bothost.tech";     // ← адрес бота на bothost (без / в конце)
+  var TRIGGERS = ["#booking", "#popup:order"];    // ссылки кнопок, которые открывают запись
+  var CERT_TRIGGERS = ["#gift", "#popup:sert"];   // ссылки кнопок, которые открывают покупку сертификата
+  var PRIVACY_URL = "";                           // ссылка на политику конфиденциальности, если есть
+  var SHOW_INLINE_BUTTON = false;                 // true — показать кнопку «Записаться» прямо на месте блока
+  // Ещё можно сразу открыть нужный шаг:
+  //   #booking:group  #booking:date  #booking:out  #booking:event
+  //   #booking:event:birthday  #booking:event:corporate  #booking:event:hen  #booking:event:other
+  //   #booking:out:wedding (свадьба — это выездной МК)
+  //   #gift:30  #gift:40  #gift:50   и с типом: #gift:30:pdf  #gift:50:print
+
+  // ====================== ТЕКСТЫ ======================
+  var TEXT = {
+    title: "Запись на мастер-класс",
+    formats: [
+      { code: "group", title: "👥 Групповой мастер-класс", desc: "Каждый делает свой коврик. Сб и вс в 11:00 и 17:00, от 2 человек" },
+      { code: "date", title: "💑 МК-свидание на двоих", desc: "Только вы вдвоём и один общий коврик" },
+      { code: "out", title: "🏠 Выездной мастер-класс", desc: "Все вместе делают один большой коврик — у вас или в помещении в нашем здании" },
+      { code: "bday", title: "🎉 Ваше событие у нас", desc: "День рождения, девичник, корпоратив. Студия только для вас: 3–8 человек, любой день" }
+    ],
+    prices: "Цены",
+    groupNote: "На групповом каждый делает свой коврик: один человек — один коврик. Хотите один коврик вдвоём? Для этого есть МК-свидание 💑",
+    groupMin: "Групповой проводим от 2 человек: если группа не наберётся, менеджер заранее напишет.",
+    hotNote: "🔥 — ближайшие выходные, места разбирают быстрее.",
+    toDate: "💑 Один коврик на двоих — МК-свидание",
+    slotsTitle: "Выбери дату и время",
+    free: function (s) { return "свободно " + s.free + " из " + s.total; },
+    noSlots: "Пока свободных мест нет 😔 Напиши нам в Telegram — что-нибудь придумаем!",
+    countTitle: "Сколько человек придёт?",
+    countHint: "Вдвоём выгоднее: каждому дешевле на 150–300 ₽, а втроём и вчетвером — ещё больше 🙌",
+    sizeTitle: "Какой коврик хочешь сделать?",
+    sizeLater: "Пока не знаю — решу позже",
+    calTitle: "Выбери дату",
+    timesTitle: function (d) { return d + ": выбери время начала"; },
+    duration: "Мастер-класс длится в среднем 2–3 часа ⏱",
+    occasionTitle: "Какой повод?",
+    occasions: [
+      { code: "birthday", label: "🎂 День рождения", value: "День рождения" },
+      { code: "hen", label: "👰 Девичник", value: "Девичник" },
+      { code: "corporate", label: "💼 Корпоратив", value: "Корпоратив" },
+      { code: "other", label: "✨ Другое", value: "" }
+    ],
+    occasionOther: "Напишите повод",
+    occasionNext: "Дальше",
+    wedding: "💍 Свадьба — это выездной МК",
+    weddingNote: "На свадьбе гости вместе делают один большой коврик — например, с вашими именами или фамилией. Приедем к вам на площадку.",
+    bdayCountTitle: "Сколько вас будет?",
+    bdayCountNote: "Каждый гость делает свой коврик. В студии комфортно 6 человек, можно поместиться и ввосьмером, но будет тесновато.",
+    bdayTwo: "Вас двое? Для этого есть МК-свидание 💑",
+    bdayMore: "Больше 8",
+    bdayCrowded: "Будет тесновато, но поместимся 🙌",
+    tooManyText: "В студии столько гостей не поместится 🙈 Но есть вариант — выездной мастер-класс: все гости вместе делают один большой коврик. Приедем к вам в офис, ресторан, домой или в сад — или снимем помещение в нашем здании.",
+    tooManyOut: "🏠 Оформить выездной МК",
+    tooManyLess: "🎉 Нас будет до 8 человек",
+    outTitle: "Выездной мастер-класс",
+    outNote: "Все гости вместе делают один большой коврик — эскизом может быть что угодно: мем, имя, фамилия на свадьбу. Приедем к вам или снимем помещение для большой группы в нашем здании.",
+    outPlaces: ["Офис", "Ресторан", "Дом", "Сад", "Помещение в здании студии"],
+    outWhere: "Где планируется событие",
+    outReason: "Повод",
+    outCount: "Сколько примерно человек",
+    outAge: "Возраст участников",
+    outWhen: "Желаемая дата (если уже знаете)",
+    contactsTitle: "Как с тобой связаться?",
+    name: "Имя",
+    phone: "Телефон",
+    email: "Email — пришлём сертификат на почту",
+    comment: "Комментарий (необязательно)",
+    privacy: "Нажимая кнопку, вы соглашаетесь на обработку персональных данных",
+    submit: "Записаться",
+    submitOut: "Отправить заявку",
+    badName: "Напиши, пожалуйста, имя",
+    badPhone: "Проверь номер телефона — нужно не меньше 10 цифр",
+    badEmail: "Проверь email — на него придёт сертификат",
+    payTitle: "Записываю! 🎉",
+    adult: "Мастер-класс для взрослых, дети — от 14 лет.",
+    payText: function (p) { return "Держу место за тобой 6 часов. Чтобы запись стала окончательной, внеси предоплату " + p + " ₽ (1 000 ₽ с человека), а потом нажми «Я внёс(ла) предоплату»."; },
+    payBtn: "💳 Внести предоплату",
+    paidBtn: "✅ Я внёс(ла) предоплату",
+    certBtn: "🎟 У меня сертификат",
+    certLabel: "Номер сертификата, например KRWT_27",
+    certSend: "Записаться по сертификату",
+    checking: "Спасибо! 🙌 Менеджер проверит предоплату — подтверждение появится здесь, а если подключишь Telegram, то и там.",
+    notPaid: "Мы пока не видим оплату 🙈 Если ты уже оплатил(а), пришли чек менеджеру в Telegram — разберёмся.",
+    confirmedTitle: "Всё подтверждено! 🎉",
+    confirmed: function (w) { return "Будем ждать вас " + w + " 🧶"; },
+    sketches: "🎨 Выбрать эскиз",
+    expired: "Бронь уже неактивна — прошло больше 6 часов 😔 Давай запишемся заново.",
+    again: "Записаться заново",
+    tgTitle: "Подключи Telegram — пришлём туда подтверждение, эскизы и напоминание за сутки.",
+    tgBtn: "Получать уведомления в Telegram",
+    noTg: "Нет Telegram? Ничего страшного — менеджер свяжется по телефону.",
+    outDoneTitle: "Спасибо! 🙌",
+    outDone: "Всё передали менеджеру — скоро он свяжется с тобой, чтобы обсудить детали.",
+    taken: "Ой, это время только что заняли 😔 Выбери другое.",
+    netErr: "Не получилось связаться с сервером. Проверь интернет и попробуй ещё раз.",
+    tooMany: "Слишком много попыток. Попробуй чуть позже или напиши нам в Telegram.",
+    resume: function (w) { return "У тебя есть незавершённая запись на " + w + "."; },
+    resumeBtn: "Продолжить",
+    newBooking: "Новая запись",
+    back: "Назад",
+    close: "Закрыть",
+
+    // сертификаты
+    certTitle: "Подарочный сертификат 🎁",
+    certIntro: "Получатель сам выберет удобную дату и сделает свой коврик. Сертификат действует 3 месяца и 10 дней с даты покупки.",
+    certSizeTitle: "Выбери размер коврика",
+    certQtyTitle: function (s) { return s + "×" + s + " см. Сколько ковриков дарим?"; },
+    certQtyNote: "Чем больше, тем дешевле каждый.",
+    certEach: function (p) { return p + " ₽ за коврик"; },
+    certMore: "Больше 4",
+    certMoreLabel: "Сколько ковриков",
+    certMoreNext: "Дальше",
+    certFilesTitle: "Как оформить?",
+    certOne: function (n, w) { return "Один сертификат на всех — в нём будет написано «" + n + " " + w + "»"; },
+    certSep: "Отдельный на каждого — чтобы подарить разным людям",
+    certFilesNote: "Скидка за количество сохранится в любом случае.",
+    certTypeTitle: "Какой сертификат нужен?",
+    certPdf: "📄 Электронный (PDF-файл)",
+    certPdfDesc: "Скачаете сразу после оплаты, а ещё пришлём на почту",
+    certPrint: "🎀 Печатный — заберу в студии",
+    certPrintDesc: "Менеджер свяжется, чтобы договориться, когда удобно забрать",
+    certContactsTitle: "Контакты покупателя",
+    certSubmit: "Перейти к оплате",
+    certPayTitle: "Всё готово к оплате 🎁",
+    certPayText: "Оплати по кнопке «Оплатить», а потом вернись сюда и нажми «Я оплатил(а)».",
+    certPayBtn: "💳 Оплатить",
+    certPaidBtn: "✅ Я оплатил(а)",
+    certChecking: "Спасибо! 🙌 Менеджер проверит поступление оплаты — сертификат появится здесь. Окно можно не закрывать.",
+    certDoneTitle: "Оплата получена, спасибо! 🎉",
+    certDonePdf: "Скачайте сертификат — его можно переслать или распечатать.",
+    certDownload: function (c) { return "⬇️ Скачать сертификат №" + c; },
+    certEmailed: function (e) { return "Копию мы отправили на почту " + e + " 📧"; },
+    certEmailSoon: function (e) { return "Копия придёт на почту " + e + " в течение нескольких минут 📧"; },
+    certDonePrint: "Печатный сертификат ждёт вас в студии. Менеджер скоро свяжется, чтобы договориться о дне и времени, когда удобно его забрать.",
+    certHowBook: "Чтобы записаться, получатель нажимает «Записаться» на сайте или в нашем Telegram-боте и на шаге оплаты выбирает «У меня сертификат».",
+    certTg: "Подключи Telegram — пришлём сертификат и туда.",
+    certResume: "У вас есть незавершённая покупка сертификата.",
+    certNew: "Новая покупка"
+  };
+  // =======================================================
+
+  var WD = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+  var MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+  var STORE_KEY = "kv_booking", CERT_KEY = "kv_cert";
+  var NO_BACK = ["pay", "checking", "confirmed", "outDone", "resume", "expired", "certPay", "certChecking", "certDone", "certResume"];
+  var cfg = null, st = {}, hist = [], pollTimer = null, lastWhat = null, current = null, priceFmt = null, takenNote = false;
+  var ov, body, titleEl, backBtn;
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function rub(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+  function parseDay(s) { var p = s.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function iso(d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+  function shortDay(s) { var d = parseDay(s), w = (d.getDay() + 6) % 7; return WD[w] + " " + ("0" + d.getDate()).slice(-2) + "." + ("0" + (d.getMonth() + 1)).slice(-2); }
+  function rugsWord(n) { var a = n % 10, b = n % 100; return a === 1 && b !== 11 ? "коврик" : a >= 2 && a <= 4 && (b < 12 || b > 14) ? "коврика" : "ковриков"; }
+  function certPrice(size, n) { return n <= 4 ? cfg.cert_prices[size][n] : cfg.cert_per_from_4[size] * n; }
+  function save(k, v) { try { v ? localStorage.setItem(k, JSON.stringify(v)) : localStorage.removeItem(k); } catch (e) {} }
+  function load(k, hours) { try { var v = JSON.parse(localStorage.getItem(k) || "null"); return v && Date.now() - v.ts < hours * 3600e3 ? v : null; } catch (e) { return null; } }
+
+  function api(path, data) {
+    var opt = data ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) } : {};
+    return fetch(API + path, opt).then(function (r) {
+      return r.json().catch(function () { return { ok: false, error: "server" }; }).then(function (j) { j._status = r.status; return j; });
+    });
+  }
+
+  // ---------------- открыть / закрыть ----------------
+  // what: {mode:"book"|"cert", fmt, occasion, wedding, size, kind}
+  function open(what) {
+    what = what || { mode: "book" };
+    lastWhat = what;
+    ov.classList.add("kv-open");
+    document.documentElement.style.overflow = "hidden";
+    hist = []; st = {}; current = null; takenNote = false;
+    var ready = cfg ? Promise.resolve() : api("/api/config").then(function (j) { if (j.ok) cfg = j; else throw j; });
+    loading();
+    ready.then(function () { start(what); }).catch(netError);
+  }
+  function start(what) {
+    if (what.mode === "cert") {
+      var sc = load(CERT_KEY, 72);
+      if (sc && !what.size) { st = { cert: sc.cert }; return showStatic("certResume"); }
+      st = { csize: what.size || null, ckind: what.kind || null };
+      return show(st.csize ? "certQty" : "certSize");
+    }
+    var saved = load(STORE_KEY, 7);
+    if (saved && !what.fmt) { st = saved.st || {}; st.booking = saved.booking; return showStatic("resume"); }
+    if (!what.fmt) return show("format");
+    current = "format";  // чтобы «Назад» вело к выбору формата
+    pickFormat(what.fmt, what);
+  }
+  function close() { ov.classList.remove("kv-open"); document.documentElement.style.overflow = ""; stopPoll(); }
+  function loading() { body.innerHTML = '<div class="kv-spin"></div>'; }
+  function netError(j) {
+    var msg = j && j._status === 429 ? TEXT.tooMany : TEXT.netErr;
+    body.innerHTML = '<p class="kv-err">' + msg + '</p><button class="kv-btn kv-btn2" data-a="retry">Попробовать ещё раз</button>';
+  }
+
+  // навигация: show(шаг) запоминает историю для кнопки «Назад»
+  function show(step, noHistory) {
+    if (current && !noHistory && current !== step) hist.push(current);
+    current = step; stopPoll();
+    backBtn.style.visibility = hist.length && NO_BACK.indexOf(step) < 0 ? "visible" : "hidden";
+    titleEl.textContent = step.indexOf("cert") === 0 ? TEXT.certTitle : TEXT.title;
+    (STEPS[step] || STEPS.format)();
+    body.scrollTop = 0;
+  }
+  function showStatic(step) { hist = []; current = null; show(step); }
+  function back() { if (hist.length) { current = null; show(hist.pop(), true); } }
+
+  function pickFormat(v, what) {
+    what = what || {};
+    st = { fmt: v, outCount: st.outCount };
+    if (v === "group") return show("slots");
+    if (v === "out") { st.wedding = !!what.wedding; return show("outForm"); }
+    if (v === "bday") {
+      var oc = TEXT.occasions.filter(function (o) { return o.code === what.occasion; })[0];
+      if (oc && oc.value) { st.occasion = oc.value; return show("bdayCount"); }
+      return show("occasion");
+    }
+    st.count = 2; return show("calendar");
+  }
+
+  // ---------------- шаги ----------------
+  var STEPS = {
+    format: function () {
+      body.innerHTML = '<div class="kv-cards">' + TEXT.formats.map(function (f) {
+        return '<div><button class="kv-card" data-a="fmt" data-v="' + f.code + '"><b>' + f.title + '</b><span>' + f.desc + '</span></button>' +
+          (cfg.prices[f.code] ? '<button class="kv-link" data-a="price" data-v="' + f.code + '" style="margin:4px 0 0 14px">' + TEXT.prices + '</button>' : '') + '</div>';
+      }).join("") + '</div>';
+    },
+    price: function () {
+      body.innerHTML = '<img class="kv-img" alt="" src="' + API + cfg.prices[priceFmt] + '">' +
+        '<button class="kv-btn" data-a="fmt" data-v="' + priceFmt + '">' + TEXT.submit + '</button>';
+    },
+    slots: function () {
+      titleEl.textContent = TEXT.slotsTitle; loading();
+      api("/api/group-slots").then(function (j) {
+        if (!j.ok) return netError(j);
+        if (!j.slots.length) { body.innerHTML = '<p class="kv-p">' + TEXT.noSlots + '</p>' + tgChatBtn(); return; }
+        var html = taken() + '<p class="kv-note">' + TEXT.groupNote + '</p>', lastDay = "", anyHot = false;
+        j.slots.forEach(function (s) {
+          if (s.hot) anyHot = true;
+          if (s.day !== lastDay) { html += (lastDay ? '</div>' : '') + '<div class="kv-day">' + (s.hot ? "🔥 " : "") + esc(s.label) + '</div><div class="kv-grid">'; lastDay = s.day; }
+          html += '<button class="kv-chip" data-a="slot" data-day="' + s.day + '" data-time="' + s.time + '" data-free="' + s.free + '"><b>' + s.time + '</b> <small>· ' + TEXT.free(s) + '</small></button>';
+        });
+        html += '</div>' + (anyHot ? '<p class="kv-muted" style="margin-top:12px">' + TEXT.hotNote + '</p>' : '') +
+          '<p class="kv-muted" style="margin-top:8px">' + TEXT.groupMin + '</p><button class="kv-btn kv-btn3" data-a="fmt" data-v="date">' + TEXT.toDate + '</button>';
+        body.innerHTML = html;
+      }).catch(netError);
+    },
+    count: function () {
+      titleEl.textContent = TEXT.countTitle;
+      var n = Math.min(st.free, 6), html = '<p class="kv-p">' + shortDay(st.day) + ' в ' + st.time + '</p><div class="kv-grid">';
+      for (var i = 1; i <= n; i++) html += '<button class="kv-chip kv-num" data-a="count" data-v="' + i + '">' + i + '</button>';
+      body.innerHTML = html + '</div>' + (n >= 2 ? '<p class="kv-note" style="margin-top:12px">' + TEXT.countHint + '</p>' : '');
+    },
+    size: function () {
+      titleEl.textContent = TEXT.sizeTitle;
+      body.innerHTML = '<div class="kv-cards">' + cfg.sizes.map(function (s) {
+        return '<button class="kv-card" data-a="size" data-v="' + s.size + '"><b>' + esc(s.label) + '</b><span>' + rub(s.price) + ' ₽</span></button>';
+      }).join("") + '<button class="kv-card" data-a="size" data-v=""><b>' + TEXT.sizeLater + '</b></button></div>';
+    },
+    occasion: function () {
+      titleEl.textContent = TEXT.occasionTitle;
+      body.innerHTML = '<div class="kv-cards">' + TEXT.occasions.map(function (o) {
+        return '<button class="kv-card" data-a="occasion" data-v="' + o.code + '"><b>' + o.label + '</b></button>';
+      }).join("") + '</div><form data-form="occasion" hidden style="margin-top:12px">' + field("occasion", TEXT.occasionOther) +
+        '<p class="kv-err" hidden></p><button class="kv-btn" type="submit">' + TEXT.occasionNext + '</button></form>' +
+        '<button class="kv-btn kv-btn3" data-a="wedding">' + TEXT.wedding + '</button>';
+    },
+    bdayCount: function () {
+      titleEl.textContent = TEXT.bdayCountTitle;
+      var html = '<p class="kv-note">' + TEXT.bdayCountNote + '</p><div class="kv-grid">';
+      for (var i = cfg.bday.min; i <= cfg.bday.max; i++) html += '<button class="kv-chip kv-num" data-a="bcount" data-v="' + i + '">' + i + '</button>';
+      body.innerHTML = html + '<button class="kv-chip" data-a="bcount" data-v="more">' + TEXT.bdayMore + '</button></div>' +
+        '<button class="kv-link" data-a="fmt" data-v="date" style="margin-top:14px">' + TEXT.bdayTwo + '</button>';
+    },
+    tooMany: function () {
+      body.innerHTML = '<p class="kv-p">' + TEXT.tooManyText + '</p><button class="kv-btn" data-a="tooManyOut">' + TEXT.tooManyOut + '</button>' +
+        '<button class="kv-btn kv-btn2" data-a="goto" data-v="bdayCount">' + TEXT.tooManyLess + '</button>';
+    },
+    calendar: function () {
+      titleEl.textContent = TEXT.calTitle; loading();
+      var go = st.days ? Promise.resolve() : api("/api/days?fmt=" + st.fmt).then(function (j) {
+        if (!j.ok) throw j; st.days = j.days; st.first = j.first; st.last = j.last;
+        var f = parseDay(j.days.length ? j.days[0] : j.first); st.month = [f.getFullYear(), f.getMonth()];
+      });
+      go.then(function () {
+        if (!st.days.length) { body.innerHTML = '<p class="kv-p">' + TEXT.noSlots + '</p>' + tgChatBtn(); return; }
+        var y = st.month[0], m = st.month[1], set = {};
+        st.days.forEach(function (d) { set[d] = 1; });
+        var first = new Date(y, m, 1), shift = (first.getDay() + 6) % 7, daysIn = new Date(y, m + 1, 0).getDate();
+        var minM = parseDay(st.first), maxM = parseDay(st.last);
+        var canPrev = y * 12 + m > minM.getFullYear() * 12 + minM.getMonth(), canNext = y * 12 + m < maxM.getFullYear() * 12 + maxM.getMonth();
+        var html = taken() + (st.fmt === "bday" && st.count > cfg.bday.comfort ? '<p class="kv-note">' + TEXT.bdayCrowded + '</p>' : '') +
+          '<div class="kv-cal-h"><button class="kv-ic" data-a="month" data-v="-1" ' + (canPrev ? '' : 'style="visibility:hidden"') + '>‹</button>' +
+          MONTHS[m] + ' ' + y + '<button class="kv-ic" data-a="month" data-v="1" ' + (canNext ? '' : 'style="visibility:hidden"') + '>›</button></div><div class="kv-cal">' +
+          WD.map(function (w) { return '<div class="kv-wd">' + w + '</div>'; }).join("");
+        for (var i = 0; i < shift; i++) html += '<div></div>';
+        for (var d = 1; d <= daysIn; d++) {
+          var key = iso(new Date(y, m, d));
+          html += set[key] ? '<button data-a="day" data-v="' + key + '">' + d + '</button>' : '<div class="kv-off">' + d + '</div>';
+        }
+        body.innerHTML = html + '</div>';
+      }).catch(netError);
+    },
+    times: function () {
+      titleEl.textContent = TEXT.timesTitle(shortDay(st.day)); loading();
+      api("/api/times?fmt=" + st.fmt + "&day=" + st.day).then(function (j) {
+        if (!j.ok) return netError(j);
+        if (!j.times.length) { st.days = null; body.innerHTML = '<p class="kv-err">' + TEXT.taken + '</p><button class="kv-btn kv-btn2" data-a="goto" data-v="calendar">' + TEXT.calTitle + '</button>'; return; }
+        body.innerHTML = '<p class="kv-muted">' + TEXT.duration + '</p><div class="kv-grid">' + j.times.map(function (t) {
+          return '<button class="kv-chip kv-num" data-a="time" data-v="' + t + '">' + t + '</button>';
+        }).join("") + '</div>';
+      }).catch(netError);
+    },
+    outForm: function () {
+      titleEl.textContent = TEXT.outTitle;
+      body.innerHTML = '<p class="kv-note">' + (st.wedding ? TEXT.weddingNote : TEXT.outNote) + '</p><form data-form="out">' +
+        '<div class="kv-f"><span>' + TEXT.outWhere + '</span><div class="kv-grid" style="margin-bottom:8px">' +
+        TEXT.outPlaces.map(function (p) { return '<button type="button" class="kv-chip" data-a="place" data-v="' + esc(p) + '">' + esc(p) + '</button>'; }).join("") +
+        '</div><input name="where" placeholder="или напишите своё"></div>' +
+        field("reason", TEXT.outReason, st.wedding ? "Свадьба" : "") + field("count", TEXT.outCount, st.outCount || "") + field("age", TEXT.outAge) + field("when", TEXT.outWhen) +
+        field("name", TEXT.name, st.name || "") + field("phone", TEXT.phone, st.phone || "", "tel") + hp() + '<p class="kv-err" hidden></p>' +
+        '<button class="kv-btn" type="submit">' + TEXT.submitOut + '</button>' + privacy() + '</form>';
+    },
+    contacts: function () {
+      titleEl.textContent = TEXT.contactsTitle;
+      body.innerHTML = '<form data-form="book">' + field("name", TEXT.name, st.name || "") + field("phone", TEXT.phone, st.phone || "", "tel") +
+        '<label class="kv-f"><span>' + TEXT.comment + '</span><textarea name="comment" rows="2"></textarea></label>' + hp() +
+        '<p class="kv-err" hidden></p><button class="kv-btn" type="submit">' + TEXT.submit + '</button>' + privacy() + '</form>';
+    },
+    pay: function () {
+      var b = st.booking;
+      titleEl.textContent = TEXT.payTitle;
+      body.innerHTML = (st.notPaid ? '<p class="kv-note">' + TEXT.notPaid + '</p>' : '') + summary() +
+        '<p class="kv-p"><b>' + TEXT.adult + '</b></p><p class="kv-p">' + TEXT.payText(rub(b.prepay)) + '</p>' +
+        '<a class="kv-btn" href="' + esc(cfg.pay_url) + '" target="_blank" rel="noopener">' + TEXT.payBtn + '</a>' +
+        '<button class="kv-btn kv-btn2" data-a="paid">' + TEXT.paidBtn + '</button>' +
+        '<button class="kv-btn kv-btn3" data-a="certOpen">' + TEXT.certBtn + '</button>' +
+        '<form data-form="cert" hidden style="margin-top:12px">' + field("code", TEXT.certLabel) +
+        '<p class="kv-err" hidden></p><button class="kv-btn" type="submit">' + TEXT.certSend + '</button></form>' + tgBlock(TEXT.tgTitle);
+      st.notPaid = false;
+    },
+    checking: function () {
+      titleEl.textContent = TEXT.payTitle;
+      body.innerHTML = summary() + '<p class="kv-note">' + TEXT.checking + '</p><div class="kv-spin"></div>' + tgBlock(TEXT.tgTitle);
+      startPoll(function () { return api("/api/status?id=" + encodeURIComponent(st.booking.id)); }, function (j) {
+        if (j.status === "paid") { st.deadline = j.deadline; show("confirmed"); }
+        else if (j.status === "expired") show("expired");
+        else if (j.status === "waiting") { st.notPaid = true; show("pay"); }
+      });
+    },
+    confirmed: function () {
+      titleEl.textContent = TEXT.confirmedTitle;
+      body.innerHTML = '<div class="kv-ok">🧶</div><p class="kv-p" style="text-align:center"><b>' + esc(TEXT.confirmed(st.booking.when)) + '</b></p>' +
+        (st.deadline ? '<p class="kv-note">' + esc(st.deadline).replace(/\n/g, "<br>") + '</p>' : '') +
+        '<a class="kv-btn" href="' + esc(cfg.sketches_url) + '" target="_blank" rel="noopener">' + TEXT.sketches + '</a>' + tgBlock(TEXT.tgTitle);
+      save(STORE_KEY, null);
+    },
+    expired: function () {
+      body.innerHTML = '<p class="kv-p">' + TEXT.expired + '</p><button class="kv-btn" data-a="restart">' + TEXT.again + '</button>';
+      save(STORE_KEY, null);
+    },
+    outDone: function () {
+      titleEl.textContent = TEXT.outDoneTitle;
+      body.innerHTML = '<div class="kv-ok">🚐</div><p class="kv-p" style="text-align:center">' + TEXT.outDone + '</p>' + tgBlock(TEXT.tgTitle);
+    },
+    resume: function () {
+      body.innerHTML = '<p class="kv-p">' + esc(TEXT.resume(st.booking.when)) + '</p><button class="kv-btn" data-a="resume">' + TEXT.resumeBtn + '</button>' +
+        '<button class="kv-btn kv-btn2" data-a="restart">' + TEXT.newBooking + '</button>';
+    },
+
+    // ---------- сертификаты ----------
+    certSize: function () {
+      body.innerHTML = '<p class="kv-note">' + TEXT.certIntro + '</p><p class="kv-p"><b>' + TEXT.certSizeTitle + '</b></p><div class="kv-cards">' +
+        cfg.sizes.map(function (s) {
+          return '<button class="kv-card" data-a="csize" data-v="' + s.size + '"><b>' + esc(s.label) + '</b><span>' + rub(s.price) + ' ₽</span></button>';
+        }).join("") + '</div>';
+    },
+    certQty: function () {
+      var s = st.csize, html = '<p class="kv-p"><b>' + TEXT.certQtyTitle(s) + '</b></p><p class="kv-muted">' + TEXT.certQtyNote + '</p><div class="kv-cards">';
+      for (var n = 1; n <= 4; n++) {
+        var p = certPrice(s, n);
+        html += '<button class="kv-card" data-a="cqty" data-v="' + n + '"><b>' + n + ' ' + rugsWord(n) + ' — ' + rub(p) + ' ₽</b><span>' + TEXT.certEach(rub(Math.round(p / n))) + '</span></button>';
+      }
+      body.innerHTML = html + '<button class="kv-card" data-a="cmore"><b>' + TEXT.certMore + '</b><span>' + TEXT.certEach(rub(cfg.cert_per_from_4[s])) + '</span></button></div>' +
+        '<form data-form="cqty" hidden style="margin-top:12px">' + field("qty", TEXT.certMoreLabel, "", "number") +
+        '<p class="kv-err" hidden></p><button class="kv-btn" type="submit">' + TEXT.certMoreNext + '</button></form>';
+    },
+    certFiles: function () {
+      var n = st.cqty;
+      body.innerHTML = '<p class="kv-p"><b>' + TEXT.certFilesTitle + '</b></p><div class="kv-cards">' +
+        '<button class="kv-card" data-a="cfiles" data-v="one"><b>' + esc(TEXT.certOne(n, rugsWord(n))) + '</b></button>' +
+        '<button class="kv-card" data-a="cfiles" data-v="sep"><b>' + TEXT.certSep + '</b></button></div><p class="kv-muted" style="margin-top:10px">' + TEXT.certFilesNote + '</p>';
+    },
+    certType: function () {
+      body.innerHTML = '<p class="kv-p"><b>' + TEXT.certTypeTitle + '</b></p><div class="kv-cards">' +
+        '<button class="kv-card" data-a="ctype" data-v="pdf"><b>' + TEXT.certPdf + '</b><span>' + TEXT.certPdfDesc + '</span></button>' +
+        '<button class="kv-card" data-a="ctype" data-v="print"><b>' + TEXT.certPrint + '</b><span>' + TEXT.certPrintDesc + '</span></button></div>';
+    },
+    certContacts: function () {
+      var needEmail = st.ckind === "pdf";
+      body.innerHTML = certSummary() + '<p class="kv-p"><b>' + TEXT.certContactsTitle + '</b></p><form data-form="certOrder">' +
+        field("name", TEXT.name, st.name || "") + field("phone", TEXT.phone, st.phone || "", "tel") +
+        (needEmail ? field("email", TEXT.email, st.email || "", "email") : '') + hp() +
+        '<p class="kv-err" hidden></p><button class="kv-btn" type="submit">' + TEXT.certSubmit + '</button>' + privacy() + '</form>';
+    },
+    certPay: function () {
+      var c = st.cert;
+      body.innerHTML = (st.notPaid ? '<p class="kv-note">' + TEXT.notPaid + '</p>' : '') + '<p class="kv-p"><b>' + TEXT.certPayTitle + '</b></p>' +
+        '<div class="kv-sum"><div><span>Сертификат</span><span>' + esc(c.what) + '</span></div><div><span>Оформление</span><span>' + esc(c.type) + '</span></div>' +
+        '<div><span>К оплате</span><span>' + rub(c.total) + ' ₽</span></div></div><p class="kv-p">' + TEXT.certPayText + '</p>' +
+        '<a class="kv-btn" href="' + esc(c.pay_url) + '" target="_blank" rel="noopener">' + TEXT.certPayBtn + '</a>' +
+        '<button class="kv-btn kv-btn2" data-a="cpaid">' + TEXT.certPaidBtn + '</button>' + tgBlock(TEXT.certTg, c.tg_link);
+      st.notPaid = false;
+    },
+    certChecking: function () {
+      var c = st.cert;
+      body.innerHTML = '<p class="kv-note">' + TEXT.certChecking + '</p><div class="kv-spin"></div>' + tgBlock(TEXT.certTg, c.tg_link);
+      startPoll(function () { return api("/api/cert-status?order=" + encodeURIComponent(c.order) + "&key=" + encodeURIComponent(c.key)); }, function (j) {
+        if (j.status === "paid") { st.done = j; show("certDone"); }
+        else if (j.status === "waiting") { st.notPaid = true; show("certPay"); }
+      });
+    },
+    certDone: function () {
+      var d = st.done, html = '<div class="kv-ok">🎁</div><p class="kv-p" style="text-align:center"><b>' + TEXT.certDoneTitle + '</b></p>';
+      if (d.kind === "pdf") {
+        html += '<p class="kv-p">' + TEXT.certDonePdf + '</p>' + d.files.map(function (f) {
+          return '<a class="kv-btn" href="' + esc(API + f.url) + '" target="_blank" rel="noopener">' + esc(TEXT.certDownload(f.code)) + '</a>';
+        }).join("");
+        if (d.email) html += '<p class="kv-muted" style="margin-top:10px">' + esc(d.email_sent ? TEXT.certEmailed(d.email) : TEXT.certEmailSoon(d.email)) + '</p>';
+      } else {
+        html += '<p class="kv-p">' + TEXT.certDonePrint + '</p><p class="kv-note">' + esc(d.how_to_find || cfg.how_to_find).replace(/\n/g, "<br>") + '</p>';
+      }
+      body.innerHTML = html + '<p class="kv-muted" style="margin-top:12px">' + TEXT.certHowBook + '</p>';
+      save(CERT_KEY, null);
+    },
+    certResume: function () {
+      body.innerHTML = '<p class="kv-p">' + TEXT.certResume + '</p><div class="kv-sum"><div><span>Сертификат</span><span>' + esc(st.cert.what) + '</span></div></div>' +
+        '<button class="kv-btn" data-a="cresume">' + TEXT.resumeBtn + '</button><button class="kv-btn kv-btn2" data-a="cnew">' + TEXT.certNew + '</button>';
+    }
+  };
+
+  function field(name, label, value, type) {
+    return '<label class="kv-f"><span>' + label + '</span><input name="' + name + '" type="' + (type || "text") + '" value="' + esc(value || "") + '"' +
+      (type === "tel" ? ' inputmode="tel" autocomplete="tel"' : type === "email" ? ' autocomplete="email"' : type === "number" ? ' inputmode="numeric" min="5" max="50"' : name === "name" ? ' autocomplete="given-name"' : '') + '></label>';
+  }
+  function hp() { return '<input class="kv-hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">'; }
+  function privacy() {
+    return '<p class="kv-muted" style="margin-top:8px">' + (PRIVACY_URL ? '<a href="' + esc(PRIVACY_URL) + '" target="_blank" rel="noopener" style="color:inherit">' + TEXT.privacy + '</a>' : TEXT.privacy) + '</p>';
+  }
+  function taken() { if (!takenNote) return ""; takenNote = false; return '<p class="kv-err">' + TEXT.taken + '</p>'; }
+  function summary() {
+    var b = st.booking, f = TEXT.formats.filter(function (x) { return x.code === st.fmt; })[0];
+    var name = st.occasion ? st.occasion : f ? f.title.replace(/^\S+\s/, "") : "";
+    return '<div class="kv-sum"><div><span>Формат</span><span>' + esc(name) + '</span></div>' +
+      '<div><span>Когда</span><span>' + esc(b.when) + '</span></div><div><span>Человек</span><span>' + b.people + '</span></div></div>';
+  }
+  function certSummary() {
+    var n = st.cqty, sep = st.csep && n > 1;
+    return '<div class="kv-sum"><div><span>Сертификат</span><span>' + st.csize + '×' + st.csize + ' см, ' + n + ' ' + rugsWord(n) + '</span></div>' +
+      (n > 1 ? '<div><span>Файлов</span><span>' + (sep ? n : 1) + '</span></div>' : '') +
+      '<div><span>Сумма</span><span>' + rub(certPrice(st.csize, n)) + ' ₽</span></div></div>';
+  }
+  function tgBlock(title, link) {
+    link = link || (st.booking && st.booking.tg_link) || "";
+    if (!link) return "";
+    return '<div style="margin-top:18px;border-top:1px solid #ece7e3;padding-top:14px"><p class="kv-p kv-muted">' + title + '</p>' +
+      '<a class="kv-btn kv-tg" href="' + esc(link) + '" target="_blank" rel="noopener">' + TEXT.tgBtn + '</a>' +
+      '<p class="kv-muted" style="margin-top:8px">' + TEXT.noTg + '</p></div>';
+  }
+  function tgChatBtn() { return cfg.bot_username ? '<a class="kv-btn kv-tg" href="https://t.me/' + esc(cfg.bot_username) + '?start=book" target="_blank" rel="noopener">Написать в Telegram</a>' : ''; }
+
+  function startPoll(request, onResult) {
+    stopPoll();
+    var tries = 0, step = current;
+    pollTimer = setInterval(function () {
+      if (++tries > 90) return stopPoll();  // ~15 минут
+      request().then(function (j) { if (j.ok && current === step) onResult(j); }).catch(function () {});
+    }, 10000);
+  }
+  function stopPoll() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
+  function remember() { save(STORE_KEY, { ts: Date.now(), booking: st.booking, st: { fmt: st.fmt, occasion: st.occasion } }); }
+
+  function showErr(form, msg) { var e = form.querySelector(".kv-err"); e.textContent = msg; e.hidden = false; }
+  function phoneOk(p) { var n = p.replace(/\D/g, "").length; return n >= 10 && n <= 15; }
+  function emailOk(e) { return /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(e); }
+
+  // ---------------- нажатия ----------------
+  function onClick(e) {
+    if (e.target === ov) return close();
+    var el = e.target.closest("[data-a]");
+    if (!el) return;
+    var a = el.getAttribute("data-a"), v = el.getAttribute("data-v");
+    if (a === "close") return close();
+    if (a === "back") return back();
+    if (a === "retry") return open(lastWhat);
+    if (a === "restart") { save(STORE_KEY, null); st = {}; hist = []; current = null; return show("format"); }
+    if (a === "resume") { current = null; return api("/api/status?id=" + encodeURIComponent(st.booking.id)).then(function (j) {
+      if (!j.ok || j.status === "expired") return show("expired");
+      if (j.status === "paid") { st.deadline = j.deadline; return show("confirmed"); }
+      show(j.status === "checking" ? "checking" : "pay");
+    }).catch(netError); }
+    if (a === "goto") return show(v);
+    if (a === "price") { priceFmt = v; return show("price"); }
+    if (a === "fmt") return pickFormat(v);
+    if (a === "slot") { st.day = el.getAttribute("data-day"); st.time = el.getAttribute("data-time"); st.free = +el.getAttribute("data-free"); return show("count"); }
+    if (a === "count") { st.count = +v; return show(st.count === 1 ? "size" : "contacts"); }
+    if (a === "size") { st.size = v; return show("contacts"); }
+    if (a === "occasion") {
+      var oc = TEXT.occasions.filter(function (o) { return o.code === v; })[0];
+      if (oc && oc.value) { st.occasion = oc.value; return show("bdayCount"); }
+      var of = body.querySelector('[data-form="occasion"]'); of.hidden = false; of.querySelector("input").focus(); return;
+    }
+    if (a === "wedding") { st = { fmt: "out", wedding: true }; return show("outForm"); }
+    if (a === "bcount") {
+      if (v === "more") { st.outCount = cfg.bday.max + "+"; return show("tooMany"); }
+      st.count = +v; st.days = null; return show("calendar");
+    }
+    if (a === "tooManyOut") { var oc2 = st.outCount; st = { fmt: "out", outCount: oc2 }; return show("outForm"); }
+    if (a === "month") { var mm = st.month[0] * 12 + st.month[1] + (+v); st.month = [Math.floor(mm / 12), mm % 12]; return show("calendar", true); }
+    if (a === "day") { st.day = v; return show("times"); }
+    if (a === "time") { st.time = v; return show("contacts"); }
+    if (a === "place") {
+      el.parentNode.querySelectorAll(".kv-chip").forEach(function (c) { c.classList.remove("kv-on"); });
+      el.classList.add("kv-on"); el.closest("form").querySelector('[name="where"]').value = v; return;
+    }
+    if (a === "certOpen") { var f = body.querySelector('[data-form="cert"]'); f.hidden = false; f.querySelector("input").focus(); return; }
+    if (a === "paid") {
+      el.disabled = true;
+      return api("/api/paid", { id: st.booking.id }).then(function (j) {
+        if (j.ok) return show("checking");
+        if (j.error === "expired" || j.error === "not_found") return show("expired");
+        el.disabled = false; netError(j);
+      }).catch(netError);
+    }
+    // сертификаты
+    if (a === "csize") { st.csize = +v; return show("certQty"); }
+    if (a === "cqty") return gotQty(+v);
+    if (a === "cmore") { var qf = body.querySelector('[data-form="cqty"]'); qf.hidden = false; qf.querySelector("input").focus(); return; }
+    if (a === "cfiles") { st.csep = v === "sep"; return st.ckind ? show("certContacts") : show("certType"); }
+    if (a === "ctype") { st.ckind = v; return show("certContacts"); }
+    if (a === "cpaid") {
+      el.disabled = true;
+      return api("/api/cert-paid", { order: st.cert.order, key: st.cert.key }).then(function (j) {
+        if (j.ok) return show("certChecking");
+        el.disabled = false; netError(j);
+      }).catch(netError);
+    }
+    if (a === "cresume") {
+      var c = st.cert; current = null;
+      return api("/api/cert-status?order=" + encodeURIComponent(c.order) + "&key=" + encodeURIComponent(c.key)).then(function (j) {
+        if (!j.ok) { save(CERT_KEY, null); st = {}; return show("certSize"); }
+        if (j.status === "paid") { st.done = j; return show("certDone"); }
+        show(j.status === "checking" ? "certChecking" : "certPay");
+      }).catch(netError);
+    }
+    if (a === "cnew") { save(CERT_KEY, null); st = {}; hist = []; current = null; return show("certSize"); }
+  }
+  function gotQty(n) { st.cqty = n; if (n > 1) return show("certFiles"); st.csep = false; return st.ckind ? show("certContacts") : show("certType"); }
+
+  function onSubmit(e) {
+    e.preventDefault();
+    var form = e.target, kind = form.getAttribute("data-form"), fd = {};
+    Array.prototype.forEach.call(form.elements, function (x) { if (x.name) fd[x.name] = x.value.trim(); });
+    var btn = form.querySelector('[type="submit"]');
+    if (kind === "occasion") {
+      if (!fd.occasion) return showErr(form, TEXT.occasionOther);
+      st.occasion = fd.occasion; return show("bdayCount");
+    }
+    if (kind === "cqty") {
+      var n = parseInt(fd.qty, 10);
+      if (!(n >= 1 && n <= 50)) return showErr(form, TEXT.certMoreLabel);
+      return gotQty(n);
+    }
+    if (kind === "cert") {
+      if (!fd.code) return showErr(form, TEXT.certLabel);
+      btn.disabled = true;
+      return api("/api/cert", { id: st.booking.id, code: fd.code }).then(function (j) {
+        if (j.ok) { st.deadline = j.deadline; return show("confirmed"); }
+        if (j.error === "expired" || j.error === "not_found") return show("expired");
+        btn.disabled = false; showErr(form, TEXT.netErr);
+      }).catch(function () { btn.disabled = false; showErr(form, TEXT.netErr); });
+    }
+    if (!fd.name) return showErr(form, TEXT.badName);
+    if (!phoneOk(fd.phone)) return showErr(form, TEXT.badPhone);
+    st.name = fd.name; st.phone = fd.phone;
+    if (kind === "certOrder") {
+      if (st.ckind === "pdf" && (cfg.email_enabled || fd.email) && !emailOk(fd.email || "")) return showErr(form, TEXT.badEmail);
+      st.email = fd.email;
+      btn.disabled = true;
+      return api("/api/cert-order", { size: st.csize, qty: st.cqty, separate: !!st.csep, kind: st.ckind, name: fd.name, phone: fd.phone, email: fd.email || "", website: fd.website }).then(function (j) {
+        if (!j.ok) { btn.disabled = false; return showErr(form, j.error === "bad_email" ? TEXT.badEmail : j._status === 429 ? TEXT.tooMany : TEXT.netErr); }
+        st.cert = j; save(CERT_KEY, { ts: Date.now(), cert: j }); hist = []; show("certPay");
+      }).catch(function () { btn.disabled = false; showErr(form, TEXT.netErr); });
+    }
+    btn.disabled = true;
+    if (kind === "out") {
+      return api("/api/outcall", fd).then(function (j) {
+        if (!j.ok) { btn.disabled = false; return showErr(form, j._status === 429 ? TEXT.tooMany : TEXT.netErr); }
+        st.booking = { id: j.id, tg_link: j.tg_link }; hist = []; show("outDone");
+      }).catch(function () { btn.disabled = false; showErr(form, TEXT.netErr); });
+    }
+    var data = { fmt: st.fmt, day: st.day, time: st.time, count: st.count, size: st.size || "", occasion: st.occasion || "", name: fd.name, phone: fd.phone, comment: fd.comment, website: fd.website };
+    api("/api/book", data).then(function (j) {
+      if (j.ok) { st.booking = j; remember(); hist = []; return show("pay"); }
+      btn.disabled = false;
+      if (j.error === "taken") { st.days = null; takenNote = true; hist = []; current = null; return show(st.fmt === "group" ? "slots" : "calendar"); }
+      showErr(form, j._status === 429 ? TEXT.tooMany : TEXT.netErr);
+    }).catch(function () { btn.disabled = false; showErr(form, TEXT.netErr); });
+  }
+
+  // ---------------- какие ссылки что открывают ----------------
+  function parseHref(href) {
+    href = String(href || "");
+    var i = href.indexOf("#"); if (i < 0) return null;
+    var h = href.slice(i);
+    if (TRIGGERS.indexOf(h) >= 0) return { mode: "book" };
+    if (CERT_TRIGGERS.indexOf(h) >= 0) return { mode: "cert" };
+    var m = h.match(/^#booking:(group|date|out|event)(?::(birthday|corporate|hen|other|wedding))?$/);
+    if (m) {
+      if (m[1] === "out" || m[2] === "wedding") return { mode: "book", fmt: "out", wedding: m[2] === "wedding" };
+      return { mode: "book", fmt: m[1] === "event" ? "bday" : m[1], occasion: m[2] };
+    }
+    m = h.match(/^#gift:(30|40|50)(?::(pdf|print))?$/);
+    if (m) return { mode: "cert", size: +m[1], kind: m[2] || null };
+    return null;
+  }
+
+  function init() {
+    var root = document.getElementById("kv-widget-root");
+    ov = document.createElement("div");
+    ov.className = "kv-ov";
+    ov.innerHTML = '<div class="kv-box" role="dialog" aria-modal="true"><div class="kv-head">' +
+      '<button class="kv-ic" data-a="back" aria-label="' + TEXT.back + '">←</button><h3></h3>' +
+      '<button class="kv-ic" data-a="close" aria-label="' + TEXT.close + '">✕</button></div><div class="kv-body"></div></div>';
+    document.body.appendChild(ov);
+    body = ov.querySelector(".kv-body"); titleEl = ov.querySelector("h3"); backBtn = ov.querySelector('[data-a="back"]');
+    if (SHOW_INLINE_BUTTON && root) root.innerHTML = '<div style="text-align:center"><a href="#booking" class="kv-btn kv-inline">Записаться на мастер-класс</a></div>';
+
+    ov.addEventListener("click", onClick);
+    ov.addEventListener("submit", onSubmit);
+    ov.addEventListener("input", function (e) {  // начали исправлять — прячем ошибку
+      var f = e.target.closest("form"), er = f && f.querySelector(".kv-err");
+      if (er) er.hidden = true;
+    });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && ov.classList.contains("kv-open")) close(); });
+
+    // перехватываем кнопки сайта (#popup:order, #booking…, #popup:sert, #gift…) раньше Тильды
+    window.addEventListener("click", function (e) {
+      var a = e.target.closest && e.target.closest("a[href]");
+      if (!a) return;
+      var what = parseHref(a.getAttribute("href"));
+      if (!what) return;
+      e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      open(what);
+    }, true);
+    var fromHash = parseHref(location.hash);
+    if (fromHash) setTimeout(function () { open(fromHash); }, 300);
+    window.kvOpenBooking = function (fmt) { open({ mode: "book", fmt: fmt }); };
+    window.kvOpenGift = function (size) { open({ mode: "cert", size: size }); };
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+</script>
