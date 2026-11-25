@@ -104,8 +104,8 @@ def _register_fonts():
 def make_pdf(size: int, code: str, until: date, rugs: int = 1) -> bytes:
     """Сертификат на одного (rugs=1) или на нескольких — тогда сверху строка «2 коврика»."""
     _register_fonts()
-    template = PdfReader(str(TEMPLATE))
-    page = template.pages[0]
+    out = PdfWriter(clone_from=str(TEMPLATE))  # страница сразу «живёт» в writer — так требует pypdf 5–7
+    page = out.pages[0]
     w, h = float(page.mediabox.width), float(page.mediabox.height)
 
     buf = BytesIO()
@@ -136,8 +136,6 @@ def make_pdf(size: int, code: str, until: date, rugs: int = 1) -> bytes:
 
     overlay = PdfReader(BytesIO(buf.getvalue())).pages[0]
     page.merge_page(overlay)
-    out = PdfWriter()
-    out.add_page(page)
     result = BytesIO()
     out.write(result)
     return result.getvalue()

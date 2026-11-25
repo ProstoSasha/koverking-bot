@@ -215,7 +215,7 @@ def build_app(bot, ctx) -> web.Application:
         if not name or not _phone_ok(phone):
             return _err("bad_data")
         parts = [(label, str(d.get(key, "")).strip()[:200]) for label, key in
-                 (("Где", "where"), ("Повод", "reason"), ("Человек", "count"), ("Возраст", "age"), ("Когда", "when"))]
+                 (("Где", "where"), ("Повод", "reason"), ("Человек", "count"), ("Возраст", "age"), ("Когда", "when"), ("Комментарий", "comment"))]
         parts = [(k, v) for k, v in parts if v]
         bid = await asyncio.to_thread(ctx.new_booking_id)
         rec = {
@@ -301,6 +301,7 @@ def build_app(bot, ctx) -> web.Application:
         name = str(d.get("name", "")).strip()[:100]
         phone = str(d.get("phone", "")).strip()[:30]
         email = str(d.get("email", "")).strip()[:100]
+        comment = str(d.get("comment", "")).strip()[:300]
         if size not in certificate.SIZES or not 1 <= qty <= 50 or kind not in ("pdf", "print"):
             return _err("bad_data")
         if not name or not _phone_ok(phone):
@@ -310,7 +311,7 @@ def build_app(bot, ctx) -> web.Application:
         if kind == "pdf" and mailer.enabled() and not email:
             return _err("bad_email")
         rec = await ctx.add_cert_order(size, qty, bool(d.get("separate")) and qty > 1, kind, name, phone,
-                                       "—", "", texts.SOURCE_SITE, email)
+                                       "—", "", texts.SOURCE_SITE, email, comment)
         order = rec["order"]
         return _ok(order=order, key=ctx.link_key(order), total=certificate.price(size, qty),
                    what=ctx.cert_what(size, qty), type=texts.CERT_TYPE_LABEL[kind], pay_url=texts.PAY_URL,

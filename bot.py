@@ -979,7 +979,7 @@ def new_cert_codes(n: int) -> list[str]:
 
 
 async def add_cert_order(size: int, qty: int, separate: bool, kind: str, name: str, contact: str,
-                         tg: str, tg_id: str, source: str, email: str = "") -> dict:
+                         tg: str, tg_id: str, source: str, email: str = "", comment: str = "") -> dict:
     """Записывает покупку в лист «Сертификаты». Номер заказа = первый номер сертификата."""
     files = qty if separate else 1
     codes = await asyncio.to_thread(new_cert_codes, files)
@@ -990,6 +990,7 @@ async def add_cert_order(size: int, qty: int, separate: bool, kind: str, name: s
         "Сумма": certificate.price(size, qty), "Статус": CERT_WAIT,
         "Действует до": f"{certificate.valid_until(now.date()):%d.%m.%Y}",
         "Имя": name, "Контакт": contact, "Telegram": tg, "Telegram ID": tg_id, "Источник": source, "Email": email,
+        "Комментарий": comment,
     }
     await asyncio.to_thread(sheets.add_cert, rec)
     return {**rec, "order": codes[0]}
@@ -1041,7 +1042,13 @@ async def deliver_cert(bot: Bot, rec: dict, notify_manager: bool = True):
             tpl = texts.MGR_CERT_OK_PRINT if sent else texts.MGR_CERT_SITE_PRINT
             await tell_manager(bot, tpl.format(codes=codes, until=rec.get("Действует до", ""), contact=contact))
         return
-    files = await asyncio.to_thread(cert_pdfs, rec)
+    try:
+        files = await asyncio.to_thread(cert_pdfs, rec)
+    except Exception:
+        log.exception("Не получилось собрать PDF сертификата %s", codes)
+        if notify_manager:
+            await tell_manager(bot, texts.MGR_CERT_PDF_FAIL.format(codes=codes, contact=contact))
+        return
     sent = False
     if tg_id.isdigit():
         try:
@@ -1078,7 +1085,8 @@ async def request_cert_check(bot: Bot, rec: dict):
     await asyncio.to_thread(sheets.set_cell, rec["_row"], "Статус", texts.STATUS_CHECKING, "Сертификаты")
     head = texts.MGR_FROM_SITE if rec.get("Источник") == texts.SOURCE_SITE else ""
     qty = logic.to_int(rec.get("Ковриков"), 1)
-    contact = rec.get("Контакт", "") + (f"\nEmail: {rec['Email']}" if rec.get("Email") else "")
+    contact = rec.get("Контакт", "") + (f"\nEmail: {rec['Email']}" if rec.get("Email") else "") \
+        + (f"\nКомментарий: {rec['Комментарий']}" if rec.get("Комментарий") else "")
     await tell_manager(bot, head + texts.MGR_CERT.format(
         what=cert_what(cert_size(rec), qty), type=rec.get("Тип", ""), total=rub(logic.to_int(rec.get("Сумма"))),
         codes=rec.get("Номера", ""), name=rec.get("Имя", ""), contact=contact, tg=rec.get("Telegram", "—") or "—"),
